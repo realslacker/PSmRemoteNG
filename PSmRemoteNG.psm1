@@ -1,4 +1,4 @@
-# find mRemoteNG install location
+﻿# find mRemoteNG install location
 $mRNGDirectory = 'HKLM:\SOFTWARE\mRemoteNG', 'HKLM:\SOFTWARE\WOW6432Node\mRemoteNG' |
     ForEach-Object { Get-ItemProperty -Path $_ -Name InstallDir -ErrorAction SilentlyContinue } |
     Select-Object -First 1 -ExpandProperty InstallDir
