@@ -12,7 +12,7 @@
 RootModule = 'PSmRemoteNG.psm1'
 
 # Version number of this module.
-ModuleVersion = '2019.7.19'
+ModuleVersion = '2019.9.20'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
