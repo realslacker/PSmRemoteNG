@@ -421,6 +421,7 @@ function New-MRNGInheritanceConfiguration {
 #>
 function Export-MRNGConnectionFile {
 
+    [OutputType([void])]
     param(
 
         [Parameter(Mandatory)]
