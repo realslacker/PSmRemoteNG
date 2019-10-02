@@ -501,3 +501,280 @@ function Export-MRNGConnectionFile {
     $FilePathProvider.Save( $XmlSerializer.Serialize( $RootNode ) )
 
 }
+
+<#
+.SYNOPSIS
+ Convert a mRemoteNG secure string to plain text.
+
+.PARAMETER EncryptedMessage
+ The mRemoteNG secure string to be converted.
+
+.PARAMETER EncryptionKey
+ The encryption key that was used when encrypting the ConfCons.xml file. If no password is supplied the default mRemoteNG encryption key is "mR3m".
+
+.PARAMETER EncryptionEngine
+ The encryption engine to use when decrypting the string. Choices are 'AES', 'Serpent', and 'Twofish'. The default is 'AES'.
+
+.PARAMETER BlockCipherMode
+ The block cipher mode to use when decrypting the string. Choices are 'GCM', 'CCM', and 'EAX'. The default is 'GCM'.
+
+.PARAMETER KeyDerivationIterations
+ The number of key derivation iterations to perform when decrypting the string. Valid values are in the range 1,000 to 50,000.
+
+.EXAMPLE
+ ConvertFrom-MRNGSecureString -EncryptedMessage 'pLs5zen+UvaqFnn2KDn2eTrhO60gjzagqFnI/8n3dF74zCj9lZDGvR1nJ8bxf5OCuHJW8gcWFWOicNIvV4h1'
+
+.EXAMPLE
+ ConvertFrom-MRNGSecureString -EncryptedMessage 'LkJUc6Q60hsZmX6QImOS+1nvFYQLNNCfP7iEupby8Ey84Dz+3u7lRo93YaL6fJf2GCXOtpXtzgZACxhVKcJh' -EncryptionEngine Serpent -BlockCipherMode EAX
+
+.EXAMPLE
+ ConvertFrom-MRNGSecureString -EncryptedMessage 'MqE3IQxYiLioTaD86rzRusDmiD2nX2b9uabDASZdRB9+gk7ygLWSqYFVEg5zqa65qe6j3ZPtgeLxKNZiIoGv' -EncryptionKey ( 'password' | ConvertTo-SecureString -AsPlainText -Force )
+
+#>
+function ConvertFrom-MRNGSecureString {
+
+    [OutputType([string])]
+    param(
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $EncryptedMessage,
+
+        [ValidateNotNullOrEmpty()]
+        [securestring]
+        $EncryptionKey = ( ConvertTo-SecureString -String 'mR3m' -AsPlainText -Force ),
+
+        [ValidateSet('AES', 'Serpent', 'Twofish')]
+        [string]
+        $EncryptionEngine = 'AES',
+
+        [ValidateSet('GCM', 'CCM', 'EAX')]
+        [string]
+        $BlockCipherMode = 'GCM',
+
+        [ValidateRange(1000, 50000)]
+        [int]
+        $KeyDerivationIterations = 1000
+
+    )
+
+    # choose the text encoding
+    $Encoding = [System.Text.Encoding]::UTF8
+
+    # convert the $EncryptionKey to plain text
+    $EncryptionKeyBSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR( $EncryptionKey )
+    $EncryptionKeyText = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto( $EncryptionKeyBSTR )
+    $EncryptionKeyBytes = [Org.BouncyCastle.Crypto.PbeParametersGenerator]::Pkcs5PasswordToBytes( [char[]]$EncryptionKeyText )
+    
+    # convert the base64 encoded string to a byte array
+    $EncryptedMessageBytes = [convert]::FromBase64String( $EncryptedMessage )
+
+    # choose the encryption engine
+    $Engine = switch ( $EncryptionEngine ) {
+
+        'AES'     { [Org.BouncyCastle.Crypto.Engines.AesEngine]::new() }
+        'Serpent' { [Org.BouncyCastle.Crypto.Engines.SerpentEngine]::new() }
+        'Twofish' { [Org.BouncyCastle.Crypto.Engines.TwofishEngine]::new() }
+
+    }
+
+    # choose the cipher mode
+    $Cipher = switch ( $BlockCipherMode ) {
+
+        'GCM' { [Org.BouncyCastle.Crypto.Modes.GcmBlockCipher]::new( $Engine ) }
+        'CCM' { [Org.BouncyCastle.Crypto.Modes.CcmBlockCipher]::new( $Engine ) }
+        'EAX' { [Org.BouncyCastle.Crypto.Modes.EaxBlockCipher]::new( $Engine ) }
+
+    }
+
+    # generate a new random string
+    $SecureRandom = [Org.BouncyCastle.Security.SecureRandom]::new()
+    
+    # defaults from mRemoteNG source
+    $NonceBitSize = 128
+    $MacBitSize   = 128
+    $KeyBitSize   = 256
+    $SaltBitSize  = 128
+    $MinPasswordLength = 1
+
+    # get the salt
+    $Salt = New-Object byte[] ( $SaltBitSize/8 )
+    [array]::Copy( $EncryptedMessageBytes, 0, $Salt,  0, $Salt.Length )
+
+    # get the key
+    $KeyGenerator = [Org.BouncyCastle.Crypto.Generators.Pkcs5S2ParametersGenerator]::new()
+    $KeyGenerator.Init( $EncryptionKeyBytes, $Salt, $KeyDerivationIterations )
+    $KeyParameter = $KeyGenerator.GenerateDerivedMacParameters($KeyBitSize)
+    $KeyBytes = $KeyParameter.GetKey()
+
+    # create the cipher reader
+    $CipherStream = New-Object System.IO.MemoryStream (, $EncryptedMessageBytes )
+    $CipherReader = New-Object System.IO.BinaryReader ( $CipherStream )
+
+    # get the payload
+    $Payload = $CipherReader.ReadBytes( $Salt.Length )
+
+    # get the nonce
+    $Nonce = $CipherReader.ReadBytes( $NonceBitSize / 8 )
+
+    # build the decryption parameters
+    $Parameters = [Org.BouncyCastle.Crypto.Parameters.AeadParameters]::new( $KeyParameter, $MacBitSize, $Nonce, $Payload )
+
+    # initialize the Cipher
+    $Cipher.Init( $false, $Parameters )
+
+    # get the cipher text
+    $CipherTextBytes = $CipherReader.ReadBytes( $EncryptedMessageBytes.Length - $Nonce.Length )
+
+    # read the decoded text byte array
+    $PlainTextByteArray = New-Object byte[] ( $Cipher.GetOutputSize( $CipherTextBytes.Length ) )
+
+    # get the length of the decoded string
+    $Len = $Cipher.ProcessBytes( $CipherTextBytes, 0, $CipherTextBytes.Length, $PlainTextByteArray, 0 )
+
+    # do finial decryption
+    $Cipher.DoFinal( $PlainTextByteArray, $Len ) > $null
+
+    # output UTF8 encoded string
+    $Encoding.GetString( $PlainTextByteArray )
+
+}
+
+<#
+.SYNOPSIS
+ Convert a plain text string to a mRemoteNG secure string.
+
+.PARAMETER Message
+ The string to be converted.
+
+.PARAMETER EncryptionKey
+ The encryption key to use when encrypting the string. It should match what you are using in your ConfCons.xml file. If no password is supplied the default mRemoteNG encryption key is "mR3m".
+
+.PARAMETER EncryptionEngine
+ The encryption engine to use when encrypting the string. Choices are 'AES', 'Serpent', and 'Twofish'. The default is 'AES'.
+
+.PARAMETER BlockCipherMode
+ The block cipher mode to use when encrypting the string. Choices are 'GCM', 'CCM', and 'EAX'. The default is 'GCM'.
+
+.PARAMETER KeyDerivationIterations
+ The number of key derivation iterations to perform when encrypting the string. Valid values are in the range 1,000 to 50,000.
+
+.EXAMPLE
+ ConvertTo-MRNGSecureString -Message 'SecureP@ssword!'
+
+.EXAMPLE
+ ConvertTo-MRNGSecureString -Message 'SecureP@ssword!' -EncryptionEngine Serpent -BlockCipherMode EAX
+
+.EXAMPLE
+ ConvertTo-MRNGSecureString -Message 'SecureP@ssword!' -EncryptionKey ( 'password' | ConvertTo-SecureString -AsPlainText -Force )
+
+#>
+function ConvertTo-MRNGSecureString {
+
+    param(
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]
+        $Message,
+
+        [ValidateNotNullOrEmpty()]
+        [securestring]
+        $EncryptionKey = ( ConvertTo-SecureString -String 'mR3m' -AsPlainText -Force ),
+
+        [ValidateSet('AES', 'Serpent', 'Twofish')]
+        [string]
+        $EncryptionEngine = 'AES',
+
+        [ValidateSet('GCM', 'CCM', 'EAX')]
+        [string]
+        $BlockCipherMode = 'GCM',
+
+        [ValidateRange(1000, 50000)]
+        [int]
+        $KeyDerivationIterations = 1000
+
+    )
+
+    # choose the text encoding
+    $Encoding = [System.Text.Encoding]::UTF8
+
+    # convert the $EncryptionKey to plain text
+    $EncryptionKeyBSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR( $EncryptionKey )
+    $EncryptionKeyText = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto( $EncryptionKeyBSTR )
+    $EncryptionKeyBytes = [Org.BouncyCastle.Crypto.PbeParametersGenerator]::Pkcs5PasswordToBytes( [char[]]$EncryptionKeyText )
+
+    # convert message to byte array
+    $MessageBytes = $Encoding.GetBytes($Message)
+
+    # choose the encryption engine
+    $Engine = switch ( $EncryptionEngine ) {
+
+        'AES'     { [Org.BouncyCastle.Crypto.Engines.AesEngine]::new() }
+        'Serpent' { [Org.BouncyCastle.Crypto.Engines.SerpentEngine]::new() }
+        'Twofish' { [Org.BouncyCastle.Crypto.Engines.TwofishEngine]::new() }
+
+    }
+
+    # choose the cipher mode
+    $Cipher = switch ( $BlockCipherMode ) {
+
+        'GCM' { [Org.BouncyCastle.Crypto.Modes.GcmBlockCipher]::new( $Engine ) }
+        'CCM' { [Org.BouncyCastle.Crypto.Modes.CcmBlockCipher]::new( $Engine ) }
+        'EAX' { [Org.BouncyCastle.Crypto.Modes.EaxBlockCipher]::new( $Engine ) }
+
+    }
+
+    # generate a new random string
+    $SecureRandom = [Org.BouncyCastle.Security.SecureRandom]::new()
+    
+    # defaults from mRemoteNG source
+    $NonceBitSize = 128
+    $MacBitSize   = 128
+    $KeyBitSize   = 256
+    $SaltBitSize  = 128
+    $MinPasswordLength = 1
+
+    # create the salt
+    $Salt = New-Object byte[] ( $SaltBitSize/8 )
+    $SecureRandom.NextBytes($Salt)
+
+    # create the key
+    $KeyGenerator = [Org.BouncyCastle.Crypto.Generators.Pkcs5S2ParametersGenerator]::new()
+    $KeyGenerator.Init( $EncryptionKeyBytes, $Salt, $KeyDerivationIterations )
+    $KeyParameter = $KeyGenerator.GenerateDerivedMacParameters($KeyBitSize)
+    $KeyBytes = $KeyParameter.GetKey()
+
+    # create the payload and add the salt
+    $Payload = New-Object byte[] ( $Salt.Length )
+    [array]::Copy( $Salt, 0, $Payload, 0, $Salt.Length )
+
+    # create the nonce
+    $Nonce = New-Object byte[] ( $NonceBitSize / 8 )
+    $SecureRandom.NextBytes( $Nonce, 0, $Nonce.Length )
+
+    # build the encryption parameters
+    $Parameters = [Org.BouncyCastle.Crypto.Parameters.AeadParameters]::new( $KeyParameter, $MacBitSize, $Nonce, $Payload )
+
+    # initialize the cipher
+    $Cipher.Init( $true, $Parameters )
+
+    # encrypt the message
+    $CipherText = New-Object byte[] ($Cipher.GetOutputSize( $MessageBytes.Length ))
+    $Len = $Cipher.ProcessBytes( $MessageBytes, 0, $MessageBytes.Length, $CipherText, 0 )
+    $Cipher.DoFinal( $CipherText, $Len ) > $null
+
+    # create a binary stream
+    $CombinedStream = New-Object System.IO.MemoryStream
+    $BinaryWriter = New-Object System.IO.BinaryWriter ( $CombinedStream )
+
+    # write the payload, nonce, and cipher to the binary stream
+    $BinaryWriter.Write( $Payload )
+    $BinaryWriter.Write( $Nonce )
+    $BinaryWriter.Write( $CipherText )
+
+    # convert the binary stream to a base64 encoded string
+    [convert]::ToBase64String( $CombinedStream.ToArray() )
+
+}
