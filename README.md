@@ -1,4 +1,4 @@
-# PSmRemoteNG
+﻿# PSmRemoteNG
 A module to create mRemoteNG connection files from PowerShell. You can install this module from the PSGallery!
 
 ## Install
@@ -19,3 +19,5 @@ You must have the mRemoteNG binaries installed.
  * [New-MRNGContainer](docs/New-MRNGContainer.md)
  * [New-MRNGInheritanceConfiguration](docs/New-MRNGInheritanceConfiguration.md)
  * [New-MRNGRootNode](docs/New-MRNGRootNode.md)
+ * [ConvertTo-MRNGSecureString](docs/ConvertTo-MRNGSecureString.md)
+ * [ConvertFrom-MRNGSecureString](docs/ConvertFrom-MRNGSecureString.md)
