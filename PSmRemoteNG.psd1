@@ -12,7 +12,7 @@
 RootModule = 'PSmRemoteNG.psm1'
 
 # Version number of this module.
-ModuleVersion = '2019.9.20'
+ModuleVersion = '2019.10.2'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -69,13 +69,22 @@ Description = 'A module to create mRemoteNG connection files from PowerShell.'
 # NestedModules = @()
 
 # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
-FunctionsToExport = '*'
+FunctionsToExport = @(
+    'ConvertFrom-MRNGSecureString'
+    'ConvertTo-MRNGSecureString'
+    'Export-MRNGConnectionFile'
+    'Import-MRNGRootNode'
+    'New-MRNGConnection'
+    'New-MRNGContainer'
+    'New-MRNGInheritanceConfiguration'
+    'New-MRNGRootNode'
+)
 
 # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
-CmdletsToExport = '*'
+CmdletsToExport = @()
 
 # Variables to export from this module
-VariablesToExport = '*'
+VariablesToExport = @()
 
 # Aliases to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no aliases to export.
 AliasesToExport = @()
