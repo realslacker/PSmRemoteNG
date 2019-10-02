@@ -672,6 +672,7 @@ function ConvertFrom-MRNGSecureString {
 #>
 function ConvertTo-MRNGSecureString {
 
+    [OutputType([string])]
     param(
 
         [Parameter(Mandatory)]
