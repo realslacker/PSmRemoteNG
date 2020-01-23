@@ -779,3 +779,4 @@ function ConvertTo-MRNGSecureString {
     [convert]::ToBase64String( $CombinedStream.ToArray() )
 
 }
+
