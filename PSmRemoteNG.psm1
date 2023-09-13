@@ -628,14 +628,14 @@ function ConvertFrom-MRNGSecureString {
     }
 
     # generate a new random string
-    $SecureRandom = [Org.BouncyCastle.Security.SecureRandom]::new()
+    #$SecureRandom = [Org.BouncyCastle.Security.SecureRandom]::new()
     
     # defaults from mRemoteNG source
     $NonceBitSize = 128
     $MacBitSize   = 128
     $KeyBitSize   = 256
     $SaltBitSize  = 128
-    $MinPasswordLength = 1
+    #$MinPasswordLength = 1
 
     # get the salt
     $Salt = New-Object byte[] ( $SaltBitSize/8 )
@@ -645,7 +645,7 @@ function ConvertFrom-MRNGSecureString {
     $KeyGenerator = [Org.BouncyCastle.Crypto.Generators.Pkcs5S2ParametersGenerator]::new()
     $KeyGenerator.Init( $EncryptionKeyBytes, $Salt, $KeyDerivationIterations )
     $KeyParameter = $KeyGenerator.GenerateDerivedMacParameters($KeyBitSize)
-    $KeyBytes = $KeyParameter.GetKey()
+    #$KeyBytes = $KeyParameter.GetKey()
 
     # create the cipher reader
     $CipherStream = New-Object System.IO.MemoryStream (, $EncryptedMessageBytes )
@@ -774,7 +774,7 @@ function ConvertTo-MRNGSecureString {
     $MacBitSize   = 128
     $KeyBitSize   = 256
     $SaltBitSize  = 128
-    $MinPasswordLength = 1
+    #$MinPasswordLength = 1
 
     # create the salt
     $Salt = New-Object byte[] ( $SaltBitSize/8 )
@@ -784,7 +784,7 @@ function ConvertTo-MRNGSecureString {
     $KeyGenerator = [Org.BouncyCastle.Crypto.Generators.Pkcs5S2ParametersGenerator]::new()
     $KeyGenerator.Init( $EncryptionKeyBytes, $Salt, $KeyDerivationIterations )
     $KeyParameter = $KeyGenerator.GenerateDerivedMacParameters($KeyBitSize)
-    $KeyBytes = $KeyParameter.GetKey()
+    #$KeyBytes = $KeyParameter.GetKey()
 
     # create the payload and add the salt
     $Payload = New-Object byte[] ( $Salt.Length )
