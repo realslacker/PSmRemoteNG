@@ -23,14 +23,6 @@ $ModuleManifestSplat = @{
 }
 Update-ModuleManifest @ModuleManifestSplat
 
-# sign the scripts
-Get-ChildItem -Path $BuildDirectory -Filter '*.psm1' |
-    ForEach-Object {
-
-        Add-SignatureToScript -Path $_.FullName
-
-    }
-
 # publish
 if ( $Publish ) {
 
