@@ -1,7 +1,31 @@
-﻿# find mRemoteNG install location
+﻿# verify that we are running in Windows PowerShell or 32-bit PowerShell Core
+if ( $PSEdition -eq 'Core' -and [System.Environment]::Is64BitProcess ) {
+    throw 'This module requires Windows PowerShell or the 32-bit version of PowerShell Core.'
+}
+
+# find mRemoteNG install location
 $mRNGDirectory = 'HKLM:\SOFTWARE\mRemoteNG', 'HKLM:\SOFTWARE\WOW6432Node\mRemoteNG' |
     ForEach-Object { Get-ItemProperty -Path $_ -Name InstallDir -ErrorAction SilentlyContinue } |
     Select-Object -First 1 -ExpandProperty InstallDir
+
+# check for supported version of mRemoteNG
+try {
+
+    $MRNGVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo( "$mRNGDirectory\mRemoteNG.exe" ).FileVersionRaw
+
+} catch {
+
+    throw ( 'Failed to load mRemoteNG version. {0}' -f $_.Exception.Message )
+
+}
+
+[version] $FirstUnsupportedVersion = '1.77'
+
+if ( $MRNGVersion -ge $FirstUnsupportedVersion  ) {
+
+    throw ( 'The installed version of mRemoteNG must be less than v{0}.' -f $FirstUnsupportedVersion )
+
+}
 
 # load assemblies
 try {
@@ -47,15 +71,21 @@ function Import-MRNGRootNode {
     $DataProvider = [mRemoteNG.Config.DataProviders.FileDataProvider]::new( $Path )
     $XmlString = $DataProvider.Load()
 
-    # create a function to return the password
-    # this is what mRemoteNG expects
-    [Func[mRemoteNG.Tools.Optional[securestring]]]$Auth = { $EncryptionKey }
-
-    # create a deserializer
-    $Deserializer = [mRemoteNG.Config.Serializers.Xml.XmlConnectionsDeserializer]::new($Auth)
     
-    # return the connections
-    ( $Deserializer.Deserialize( $XmlString ) ).RootNodes.Item(0)
+    # create a deserializer
+    if ( 'mRemoteNG.Config.Serializers.Xml.XmlConnectionsDeserializer' -as [type] ) {
+        
+        [Func[mRemoteNG.Tools.Optional[securestring]]]$Auth = { $EncryptionKey }
+        $Deserializer = [mRemoteNG.Config.Serializers.Xml.XmlConnectionsDeserializer]::new($Auth)
+        return ( $Deserializer.Deserialize( $XmlString ) ).RootNodes.Item(0)
+
+    } else {
+
+        [Func[securestring]]$Auth = { $EncryptionKey }
+        $Deserializer = [mRemoteNG.Config.Serializers.XmlConnectionsDeserializer]::new($XmlString, $Auth)
+        return ( $Deserializer.Deserialize() ).RootNodes.Item(0)
+    
+    }
 
 }
 
@@ -449,6 +479,13 @@ function Export-MRNGConnectionFile {
 
     )
 
+    # should we sort?
+    if ( $SortConnections ) {
+
+        $RootNode.SortRecursive()
+
+    }
+
     # resolve the path
     $Path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath( $Path )
 
@@ -483,16 +520,18 @@ function Export-MRNGConnectionFile {
 
     }
 
-    # XML serializer
     $CryptoProvider = [mRemoteNG.Security.SymmetricEncryption.AeadCryptographyProvider]::new( $Cipher )
     $SaveFilter = [mRemoteNG.Security.SaveFilter]::new()
-    $ConnectionNodeSerializer = [mRemoteNG.Config.Serializers.Xml.XmlConnectionNodeSerializer26]::new($CryptoProvider, $EncryptionKey, $SaveFilter)
-    $XmlSerializer = [mRemoteNG.Config.Serializers.Xml.XmlConnectionsSerializer]::new($CryptoProvider, $ConnectionNodeSerializer)
 
-    # should we sort?
-    if ( $SortConnections ) {
+    # XML serializer - compat for 1.76
+    if ( 'mRemoteNG.Config.Serializers.Xml.XmlConnectionNodeSerializer26' -as [type] ) {
+        
+        $ConnectionNodeSerializer = [mRemoteNG.Config.Serializers.Xml.XmlConnectionNodeSerializer26]::new($CryptoProvider, $EncryptionKey, $SaveFilter)
+        $XmlSerializer = [mRemoteNG.Config.Serializers.Xml.XmlConnectionsSerializer]::new($CryptoProvider, $ConnectionNodeSerializer)
 
-        $RootNode.SortRecursive()
+    } else {
+
+        $XmlSerializer = [mRemoteNG.Config.Serializers.XmlConnectionsSerializer]::new($CryptoProvider)
 
     }
 
